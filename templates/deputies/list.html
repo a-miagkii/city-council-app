@@ -1,0 +1,25 @@
+
+{% extends 'base.html' %}
+{% block title %}Депутаты — Городская дума{% endblock %}
+{% block content %}
+<h2>Депутаты</h2>
+{% if items %}
+  <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3">
+  {% for d in items %}
+    <div class="col">
+      <div class="card h-100">
+        {% if d.photo_url %}<img src="{{ d.photo_url }}" class="card-img-top" alt="{{ d.full_name }}">{% endif %}
+        <div class="card-body">
+          <h5 class="card-title">{{ d.full_name }}</h5>
+          <p class="card-text small mb-1"><strong>Округ:</strong> {{ d.district or '—' }}</p>
+          <p class="card-text small mb-1"><strong>Фракция:</strong> {{ d.faction or '—' }}</p>
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('deputies.detail', deputy_id=d.id) }}">Профиль</a>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+{% else %}
+  <p class="text-muted">Список пуст.</p>
+{% endif %}
+{% endblock %}

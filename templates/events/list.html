@@ -1,0 +1,23 @@
+
+{% extends 'base.html' %}
+{% block title %}Календарь — Городская дума{% endblock %}
+{% block content %}
+<h2>Календарь заседаний и мероприятий</h2>
+{% if items %}
+  <div class="list-group">
+  {% for e in items %}
+    <div class="list-group-item">
+      <h5 class="mb-1">{{ e.title }}</h5>
+      <small class="text-muted">
+        {{ e.start_time.strftime('%d.%m.%Y %H:%M') }}
+        {% if e.end_time %} — {{ e.end_time.strftime('%d.%m.%Y %H:%M') }}{% endif %}
+        {% if e.location %} · {{ e.location }}{% endif %}
+      </small>
+      {% if e.description %}<p class="mb-1">{{ e.description }}</p>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+{% else %}
+  <p class="text-muted">Нет запланированных мероприятий.</p>
+{% endif %}
+{% endblock %}

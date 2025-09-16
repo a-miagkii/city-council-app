@@ -1,0 +1,30 @@
+
+{% extends 'base.html' %}
+{% block title %}Регистрация — Городская дума{% endblock %}
+{% block content %}
+<h2>Регистрация</h2>
+<form method="post" novalidate>
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.name.label(class="form-label") }}
+    {{ form.name(class="form-control") }}
+    {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+  </div>
+  <div class="mb-3">
+    {{ form.email.label(class="form-label") }}
+    {{ form.email(class="form-control") }}
+    {% for e in form.email.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+  </div>
+  <div class="mb-3">
+    {{ form.password.label(class="form-label") }}
+    {{ form.password(class="form-control") }}
+    {% for e in form.password.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+  </div>
+  <div class="mb-3">
+    {{ form.confirm.label(class="form-label") }}
+    {{ form.confirm(class="form-control") }}
+    {% for e in form.confirm.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+  </div>
+  {{ form.submit(class="btn btn-primary") }}
+</form>
+{% endblock %}

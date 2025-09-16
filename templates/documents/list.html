@@ -1,0 +1,31 @@
+
+{% extends 'base.html' %}
+{% block title %}Документы — Городская дума{% endblock %}
+{% block content %}
+<h2>Нормативные документы</h2>
+{% if items %}
+  <div class="table-responsive">
+    <table class="table table-striped align-middle">
+      <thead><tr><th>Название</th><th>Тип</th><th>Опубликован</th><th>Файл</th></tr></thead>
+      <tbody>
+      {% for d in items %}
+        <tr>
+          <td>{{ d.title }}</td>
+          <td>{{ d.doc_type }}</td>
+          <td>{{ d.published_at.strftime('%d.%m.%Y') }}</td>
+          <td>
+            {% if d.file_url %}
+              <a href="{{ d.file_url }}" target="_blank" rel="noopener">Открыть</a>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="text-muted">Документы пока не загружены.</p>
+{% endif %}
+{% endblock %}

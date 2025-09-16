@@ -1,0 +1,41 @@
+
+{% extends 'base.html' %}
+{% block title %}Главная — Городская дума{% endblock %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-8">
+    <h2 class="mb-3">Новости</h2>
+    {% if news %}
+      <div class="list-group">
+        {% for n in news %}
+          <a class="list-group-item list-group-item-action" href="{{ url_for('news.detail', news_id=n.id) }}">
+            <h5 class="mb-1">{{ n.title }}</h5>
+            <small class="text-muted">{{ n.published_at.strftime('%d.%m.%Y %H:%M') }}</small>
+            <p class="mb-1 text-truncate">{{ n.body }}</p>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-muted">Пока нет опубликованных новостей.</p>
+    {% endif %}
+  </div>
+  <div class="col-lg-4">
+    <h2 class="mb-3">Ближайшие события</h2>
+    {% if events %}
+      <ul class="list-group">
+        {% for e in events %}
+          <li class="list-group-item">
+            <strong>{{ e.title }}</strong><br>
+            <small class="text-muted">
+              {{ e.start_time.strftime('%d.%m.%Y %H:%M') }}
+              {% if e.location %} · {{ e.location }}{% endif %}
+            </small>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-muted">Нет запланированных событий.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,48 @@
+
+{% extends 'base.html' %}
+{% block title %}Поиск — Городская дума{% endblock %}
+{% block content %}
+<h2>Поиск</h2>
+<form class="mb-4" action="{{ url_for('search.search') }}">
+  <input class="form-control" type="search" placeholder="Введите запрос" name="q" value="{{ q }}">
+</form>
+{% if q %}
+  <h4 class="mt-4">Новости</h4>
+  <ul>
+    {% for n in news %}
+      <li><a href="{{ url_for('news.detail', news_id=n.id) }}">{{ n.title }}</a></li>
+    {% else %}
+      <li class="text-muted">Ничего не найдено.</li>
+    {% endfor %}
+  </ul>
+
+  <h4 class="mt-4">Документы</h4>
+  <ul>
+    {% for d in docs %}
+      <li>{{ d.title }} — {{ d.doc_type }}</li>
+    {% else %}
+      <li class="text-muted">Ничего не найдено.</li>
+    {% endfor %}
+  </ul>
+
+  <h4 class="mt-4">Депутаты</h4>
+  <ul>
+    {% for d in deputies %}
+      <li><a href="{{ url_for('deputies.detail', deputy_id=d.id) }}">{{ d.full_name }}</a></li>
+    {% else %}
+      <li class="text-muted">Ничего не найдено.</li>
+    {% endfor %}
+  </ul>
+
+  <h4 class="mt-4">FAQ</h4>
+  <ul>
+    {% for f in faqs %}
+      <li>{{ f.question }}</li>
+    {% else %}
+      <li class="text-muted">Ничего не найдено.</li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="text-muted">Введите запрос для поиска по новостям, документам, депутатам и FAQ.</p>
+{% endif %}
+{% endblock %}

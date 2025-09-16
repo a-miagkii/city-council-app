@@ -1,0 +1,22 @@
+
+{% extends 'base.html' %}
+{% block title %}FAQ — Городская дума{% endblock %}
+{% block content %}
+<h2>Вопросы и ответы</h2>
+<div class="accordion" id="faqAcc">
+  {% for f in items %}
+  <div class="accordion-item">
+    <h2 class="accordion-header" id="h{{ f.id }}">
+      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c{{ f.id }}" aria-expanded="false" aria-controls="c{{ f.id }}">
+        {{ f.question }}
+      </button>
+    </h2>
+    <div id="c{{ f.id }}" class="accordion-collapse collapse" aria-labelledby="h{{ f.id }}" data-bs-parent="#faqAcc">
+      <div class="accordion-body">
+        {{ f.answer }}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

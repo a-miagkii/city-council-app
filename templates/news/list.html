@@ -1,0 +1,19 @@
+
+{% extends 'base.html' %}
+{% block title %}Новости — Городская дума{% endblock %}
+{% block content %}
+<h2>Новости</h2>
+{% if items %}
+  <div class="list-group">
+  {% for n in items %}
+    <a class="list-group-item list-group-item-action" href="{{ url_for('news.detail', news_id=n.id) }}">
+      <h5 class="mb-1">{{ n.title }}</h5>
+      <small class="text-muted">{{ n.published_at.strftime('%d.%m.%Y %H:%M') }}</small>
+      <p class="mb-1 text-truncate">{{ n.body }}</p>
+    </a>
+  {% endfor %}
+  </div>
+{% else %}
+  <p class="text-muted">Пока нет опубликованных новостей.</p>
+{% endif %}
+{% endblock %}

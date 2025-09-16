@@ -1,0 +1,23 @@
+
+{% extends 'base.html' %}
+{% block title %}{{ item.full_name }} — Депутат{% endblock %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-md-4">
+    {% if item.photo_url %}
+      <img src="{{ item.photo_url }}" class="img-fluid rounded" alt="{{ item.full_name }}">
+    {% endif %}
+  </div>
+  <div class="col-md-8">
+    <h2>{{ item.full_name }}</h2>
+    <p><strong>Фракция:</strong> {{ item.faction or '—' }}</p>
+    <p><strong>Округ:</strong> {{ item.district or '—' }}</p>
+    <p><strong>Email:</strong> {{ item.email or '—' }}</p>
+    <p><strong>Телефон:</strong> {{ item.phone or '—' }}</p>
+    {% if item.bio %}
+      <h5 class="mt-4">Биография</h5>
+      <p>{{ item.bio }}</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
