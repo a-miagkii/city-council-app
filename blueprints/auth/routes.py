@@ -50,3 +50,8 @@ def logout():
 def healthz():
     # можно расширить проверкой БД позже
     return jsonify(status="ok"), 200
+
+@bp.route('/new_healthz')
+def healthz():
+    # можно расширить проверкой БД позже
+    return jsonify(status="ok"), 200
