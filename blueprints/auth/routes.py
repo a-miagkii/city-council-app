@@ -46,12 +46,3 @@ def logout():
     logout_user()
     return redirect(url_for('main.index'))
 
-@bp.route('/healthz')
-def healthz():
-    # можно расширить проверкой БД позже
-    return jsonify(status="ok"), 200
-
-@bp.route('/new_healthz')
-def healthz():
-    # можно расширить проверкой БД позже
-    return jsonify(status="ok"), 200

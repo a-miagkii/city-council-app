@@ -22,6 +22,8 @@
             <li class="nav-item"><a class="nav-link" href="{{ url_for('documents.list_documents') }}">Документы</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('deputies.list_deputies') }}">Депутаты</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('faq.list_faq') }}">FAQ</a></li>
+            <li><a href="{{ url_for('main.about') }}">О сайте</a></li>
+
           </ul>
           <form class="d-flex" role="search" action="{{ url_for('search.search') }}">
             <input class="form-control me-2" type="search" placeholder="Поиск..." aria-label="Search" name="q" value="{{ request.args.get('q', '') }}">
