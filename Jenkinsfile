@@ -2,15 +2,15 @@ pipeline {
   agent any
 
   environment {
+    // Имя образа в Docker Hub
     IMAGE_NAME = "myagky/citycouncil"
+    // Тег по номеру сборки
+    BUILD_TAG  = "${env.BUILD_NUMBER}"
 
-    // Параметры stage-сервера:
-    STAGE_HOST = "10.211.55.16"     // <-- IP твоего stage
-    STAGE_USER = "myagky"             // <-- логин на stage
-    STAGE_DIR  = "/home/myagky/city-council-stage"
-
-    // Тег по номеру билда
-    BUILD_TAG = "${env.BUILD_NUMBER}"
+    // Параметры STAGE-сервера
+    STAGE_HOST = "10.211.55.16"                 // <-- IP/хост stage
+    STAGE_USER = "myagky"                       // <-- пользователь на stage
+    STAGE_DIR  = "/home/myagky/city-council-stage" // <-- каталог с compose на stage
   }
 
   options { timestamps() }
@@ -22,44 +22,51 @@ pipeline {
 
     stage('Build Docker image') {
       steps {
-        sh '''
+        sh """
           echo "Building Docker image..."
           docker build -t ${IMAGE_NAME}:${BUILD_TAG} -t ${IMAGE_NAME}:latest .
-        '''
+        """
       }
     }
 
     stage('Push to Docker Hub') {
       steps {
         withCredentials([usernamePassword(
-          credentialsId: 'dockerhub-creds',
+          credentialsId: 'dockerhub-creds',   // <- креды Docker Hub (username+token RW)
           usernameVariable: 'DH_USER',
           passwordVariable: 'DH_PASS'
         )]) {
-          sh '''
-            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+          sh """
+            echo "\$DH_PASS" | docker login -u "\$DH_USER" --password-stdin
             docker push ${IMAGE_NAME}:${BUILD_TAG}
             docker push ${IMAGE_NAME}:latest
             docker logout
-          '''
+          """
         }
       }
     }
 
     stage('Deploy to STAGE') {
-      when { branch 'dev' }     // деплоим на stage только из ветки dev
+      // Для multibranch: деплоим только из ветки dev
+      when { branch 'dev' }
       steps {
-        sshagent (credentials: ['stage-server-ssh']) {
-          sh '''
+        // ВАЖНО: тут укажи ID SSH-кредов Jenkins. По логам у тебя это 'myagky'
+        sshagent (credentials: ['myagky']) {
+          sh """
             set -eux
-            ssh -o StrictHostKeyChecking=no ${STAGE_USER}@${STAGE_HOST} <<'EOF'
-              set -eux
-              # папка проекта на stage
-              mkdir -p ${STAGE_DIR}
-              cd ${STAGE_DIR}
-              # убедимся, что compose файл на месте (если не скопирован заранее - создадим шаблон один раз)
-              if [ ! -f docker-compose.yaml ]; then
-                cat > docker-compose.yaml <<'EOC'
+
+            # Передаём переменные окружения в удалённую сессию и запускаем скрипт без локальной подстановки
+            ssh -o StrictHostKeyChecking=no ${STAGE_USER}@${STAGE_HOST} \\
+              "export STAGE_DIR='${STAGE_DIR}'; export IMAGE_NAME='${IMAGE_NAME}'; bash -s" <<'EOF'
+set -eux
+
+# Подготовим каталог и перейдём в него
+mkdir -p "$STAGE_DIR" "$STAGE_DIR/uploads"
+cd "$STAGE_DIR"
+
+# Создадим docker-compose.yaml, если его ещё нет (сырой here-doc оставляет текст как есть)
+if [ ! -f docker-compose.yaml ]; then
+  cat > docker-compose.yaml <<'EOC'
 version: '3.8'
 services:
   db:
@@ -70,6 +77,7 @@ services:
       POSTGRES_DB: citycouncil
     volumes:
       - pgdata_stage:/var/lib/postgresql/data
+
   web:
     image: myagky/citycouncil:latest
     env_file: .env
@@ -79,32 +87,28 @@ services:
       - "8081:8000"
     volumes:
       - ./uploads:/app/static/uploads
+
 volumes:
   pgdata_stage:
 EOC
-              fi
+fi
 
-              # .env должен быть заранее создан вручную (или сгенерируй шаблон на первый запуск)
-              if [ ! -f .env ]; then
-                cat > .env <<'EOV'
+# Создадим .env, если отсутствует (для быстрого старта; в проде лучше хранить секреты отдельно)
+if [ ! -f .env ]; then
+  cat > .env <<'EOV'
 SECRET_KEY=change-me
 SQLALCHEMY_DATABASE_URI=postgresql+psycopg2://cityuser:citypass@db:5432/citycouncil
 FLASK_ENV=production
 EOV
-              fi
+fi
 
-              mkdir -p uploads
+# Тянем свежий образ и пересоздаём web, чтобы точно применились изменения
+docker compose pull web
+docker compose up -d --force-recreate web
 
-              # тянем новый образ и перезапускаем
-              docker compose pull web
-              docker compose up -d
-
-              # при самом первом запуске можно разово наполнить БД демо-данными:
-              # docker compose exec web python seeds.py || true
-
-              docker compose ps
-            EOF
-          '''
+docker compose ps
+EOF
+          """
         }
       }
     }
@@ -112,11 +116,10 @@ EOV
 
   post {
     success {
-      echo "✅ Pushed ${IMAGE_NAME}:${BUILD_TAG} and deployed to STAGE (if dev)."
+      echo "✅ Build & push OK. Deploy to STAGE (для dev) — OK."
     }
     failure {
       echo "❌ Pipeline failed"
     }
   }
 }
-
