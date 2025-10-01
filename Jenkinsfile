@@ -51,7 +51,7 @@ pipeline {
       when { branch 'dev' }
       steps {
         // ВАЖНО: тут укажи ID SSH-кредов Jenkins. По логам у тебя это 'myagky'
-        sshagent (credentials: ['myagky']) {
+        sshagent (credentials: ['stage-server-ssh']) {
           sh """
             set -eux
 
