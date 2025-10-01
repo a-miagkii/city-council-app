@@ -1,0 +1,7 @@
+title = "city-council gitleaks config"
+
+[allowlist]
+# Пример: разрешить тестовые секреты/фикстуры
+paths = [
+  "tests/.*",
+]

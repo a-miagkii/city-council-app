@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+select = ["E", "F", "I"]         # базовые ошибки + импорты
+ignore = ["E501"]                 # при желании отключить правило про длину строки
+exclude = ["venv", ".venv", "migrations"]
+
+[tool.ruff.lint]
+fix = false
