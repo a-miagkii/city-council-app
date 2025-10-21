@@ -22,8 +22,6 @@ pipeline {
       steps {
         sh '''
           set -eux
-          # Используем официальный образ ruff, без pip
-          # Если .py нет — ruff просто пройдёт по каталогу и завершится 0
           docker run --rm \
             -v "$PWD":/src \
             ghcr.io/astral-sh/ruff:latest \
@@ -40,22 +38,17 @@ pipeline {
             -v "$PWD":/repo -w /repo \
             python:3.11-slim bash -lc '
               set -euo pipefail
-
-              # Надёжнее ставим bandit с несколькими попытками (в случае временных сетевых сбоёв)
               for i in 1 2 3; do
                 if pip install --no-cache-dir bandit >/dev/null; then break; fi
                 echo "pip install bandit failed, retry $i/3"; sleep 5
               done
               bandit --version
-
-              # Если в репо вообще нет .py — сообщим и выйдем 0
               shopt -s globstar nullglob
               files=(**/*.py *.py)
               if [ ${#files[@]} -eq 0 ]; then
                 echo "Bandit: .py файлов не найдено — пропуск."
                 exit 0
               fi
-
               bandit -r . -ll -iii
             '
         '''
@@ -65,15 +58,19 @@ pipeline {
     stage('Static: Gitleaks (secrets)') {
       steps {
         sh '''
-          set -eux
+          set -euo pipefail
           if [ -f .gitleaks.toml ]; then
-            echo "Gitleaks: найден .gitleaks.toml — используем конфиг"
-            docker run --rm -v "$PWD":/repo -w /repo \
+            echo "Gitleaks: найден .gitleaks.toml — прокидываю содержимое через env"
+            CFG=$(cat .gitleaks.toml)
+            docker run --rm \
+              -e GITLEAKS_CONFIG_TOML="$CFG" \
+              -v "$PWD":/repo -w /repo \
               zricethezav/gitleaks:latest \
-              detect --no-git --verbose --redact --exit-code 1 -c .gitleaks.toml
+              detect --no-git --verbose --redact --exit-code 1
           else
-            echo "Gitleaks: .gitleaks.toml не найден — запускаем с дефолтной конфигурацией"
-            docker run --rm -v "$PWD":/repo -w /repo \
+            echo "Gitleaks: .gitleaks.toml не найден — запускаю с дефолтной конфигурацией"
+            docker run --rm \
+              -v "$PWD":/repo -w /repo \
               zricethezav/gitleaks:latest \
               detect --no-git --verbose --redact --exit-code 1
           fi
@@ -94,7 +91,7 @@ pipeline {
     stage('Push to Docker Hub') {
       steps {
         withCredentials([usernamePassword(
-          credentialsId: 'dockerhub-creds',   // проверь, что ID кредов верный
+          credentialsId: 'dockerhub-creds',
           usernameVariable: 'DH_USER',
           passwordVariable: 'DH_PASS'
         )]) {
@@ -109,16 +106,14 @@ pipeline {
     }
 
     stage('Deploy to STAGE') {
-      when { branch 'dev' }  // деплоим только из ветки dev
+      when { branch 'dev' }  // деплоим только из dev
       steps {
-        // проверь ID SSH-кредов; должен совпадать с записью в Jenkins Credentials
         sshagent (credentials: ['stage-server-ssh']) {
           sh """
             set -eux
             ssh -o StrictHostKeyChecking=no ${STAGE_USER}@${STAGE_HOST} \\
               "export STAGE_DIR='${STAGE_DIR}'; export IMAGE_NAME='${IMAGE_NAME}'; bash -s" <<'EOF'
 set -eux
-
 mkdir -p "$STAGE_DIR" "$STAGE_DIR/uploads"
 cd "$STAGE_DIR"
 
