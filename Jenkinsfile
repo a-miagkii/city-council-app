@@ -17,15 +17,12 @@ pipeline {
       steps { checkout scm }
     }
 
-    // ===== СТАТИКА =====
+    // ===== Статика =====
     stage('Static: Ruff (code quality)') {
       steps {
         sh '''
-          set -eux
-          docker run --rm \
-            -v "$PWD":/src \
-            ghcr.io/astral-sh/ruff:latest \
-            check /src
+          # без bash-опций, чтобы не падало в /bin/sh
+          docker run --rm -v "$PWD":/src ghcr.io/astral-sh/ruff:latest check /src
         '''
       }
     }
@@ -33,24 +30,26 @@ pipeline {
     stage('Static: Bandit (security)') {
       steps {
         sh '''
-          set -eux
-          docker run --rm \
-            -v "$PWD":/repo -w /repo \
-            python:3.11-slim bash -lc '
-              set -euo pipefail
-              for i in 1 2 3; do
-                if pip install --no-cache-dir bandit >/dev/null; then break; fi
-                echo "pip install bandit failed, retry $i/3"; sleep 5
-              done
-              bandit --version
-              shopt -s globstar nullglob
-              files=(**/*.py *.py)
-              if [ ${#files[@]} -eq 0 ]; then
-                echo "Bandit: .py файлов не найдено — пропуск."
-                exit 0
-              fi
-              bandit -r . -ll -iii
-            '
+          set -eu
+          docker run --rm -v "$PWD":/repo -w /repo python:3.11-slim bash -lc '
+            set -euo pipefail
+            # Надёжная установка bandit с ретраями
+            for i in 1 2 3; do
+              if pip install --no-cache-dir bandit >/dev/null; then break; fi
+              echo "pip install bandit failed, retry $i/3"; sleep 5
+            done
+            bandit --version
+
+            # Если .py нет — пропускаем шаг (успех)
+            shopt -s globstar nullglob
+            files=(**/*.py *.py)
+            if [ ${#files[@]} -eq 0 ]; then
+              echo "Bandit: .py файлов не найдено — пропуск."
+              exit 0
+            fi
+
+            bandit -r . -ll -iii
+          '
         '''
       }
     }
@@ -58,33 +57,27 @@ pipeline {
     stage('Static: Gitleaks (secrets)') {
       steps {
         sh '''
-          set -euo pipefail
+          set -eu
           if [ -f .gitleaks.toml ]; then
-            echo "Gitleaks: найден .gitleaks.toml — прокидываю содержимое через env"
-            CFG=$(cat .gitleaks.toml)
-            docker run --rm \
-              -e GITLEAKS_CONFIG_TOML="$CFG" \
-              -v "$PWD":/repo -w /repo \
-              zricethezav/gitleaks:latest \
-              detect --no-git --verbose --redact --exit-code 1
+            echo "Gitleaks: найден .gitleaks.toml — используем конфиг"
+            docker run --rm -v "$PWD":/repo -w /repo zricethezav/gitleaks:latest \
+              detect --no-git --verbose --redact --exit-code 1 -c .gitleaks.toml
           else
-            echo "Gitleaks: .gitleaks.toml не найден — запускаю с дефолтной конфигурацией"
-            docker run --rm \
-              -v "$PWD":/repo -w /repo \
-              zricethezav/gitleaks:latest \
+            echo "Gitleaks: конфиг не найден — используем дефолтные правила"
+            docker run --rm -v "$PWD":/repo -w /repo zricethezav/gitleaks:latest \
               detect --no-git --verbose --redact --exit-code 1
           fi
         '''
       }
     }
-    // ===== /СТАТИКА =====
+    // ===== /Статика =====
 
     stage('Build Docker image') {
       steps {
-        sh """
+        sh '''
           echo "Building Docker image..."
-          docker build -t ${IMAGE_NAME}:${BUILD_TAG} -t ${IMAGE_NAME}:latest .
-        """
+          docker build -t '"${IMAGE_NAME}"':'"${BUILD_TAG}"' -t '"${IMAGE_NAME}"':latest .
+        '''
       }
     }
 
@@ -95,25 +88,28 @@ pipeline {
           usernameVariable: 'DH_USER',
           passwordVariable: 'DH_PASS'
         )]) {
-          sh """
-            echo "\$DH_PASS" | docker login -u "\$DH_USER" --password-stdin
-            docker push ${IMAGE_NAME}:${BUILD_TAG}
-            docker push ${IMAGE_NAME}:latest
+          sh '''
+            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+            docker push '"${IMAGE_NAME}"':'"${BUILD_TAG}"'
+            docker push '"${IMAGE_NAME}"':latest
             docker logout
-          """
+          '''
         }
       }
     }
 
     stage('Deploy to STAGE') {
-      when { branch 'dev' }  // деплоим только из dev
+      when { branch 'dev' }   // multibranch → только для dev
       steps {
+        // Проверь, что ID SSH-кредов совпадает с тем, что есть в Jenkins
         sshagent (credentials: ['stage-server-ssh']) {
-          sh """
-            set -eux
-            ssh -o StrictHostKeyChecking=no ${STAGE_USER}@${STAGE_HOST} \\
-              "export STAGE_DIR='${STAGE_DIR}'; export IMAGE_NAME='${IMAGE_NAME}'; bash -s" <<'EOF'
-set -eux
+          sh '''
+            set -eu
+            ssh -o StrictHostKeyChecking=no '"${STAGE_USER}"'@'"${STAGE_HOST}"' "bash -s" <<'EOF'
+set -euo pipefail
+export STAGE_DIR='"${STAGE_DIR}"'
+export IMAGE_NAME='"${IMAGE_NAME}"'
+
 mkdir -p "$STAGE_DIR" "$STAGE_DIR/uploads"
 cd "$STAGE_DIR"
 
@@ -131,7 +127,7 @@ services:
       - pgdata_stage:/var/lib/postgresql/data
 
   web:
-    image: myagky/citycouncil:latest
+    image: '"${IMAGE_NAME}"':latest
     env_file: .env
     depends_on:
       - db
@@ -157,7 +153,7 @@ docker compose pull web
 docker compose up -d --force-recreate web
 docker compose ps
 EOF
-          """
+          '''
         }
       }
     }
