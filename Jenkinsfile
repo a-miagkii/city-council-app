@@ -8,6 +8,9 @@ pipeline {
     STAGE_HOST = "10.211.55.16"
     STAGE_USER = "myagky"
     STAGE_DIR  = "/home/myagky/city-council-stage"
+
+    // Если захочешь явно задать путь к питоновскому коду для статики — поменяй на "app"
+    PY_SRC     = "."
   }
 
   options { timestamps() }
@@ -22,11 +25,11 @@ pipeline {
       steps {
         sh '''
           set -eux
-          docker run --rm -v "$PWD":/repo -w /repo python:3.11-slim bash -lc "
+          docker run --rm -v "$PWD":/repo -w /repo python:3.11-slim bash -lc '
             pip install --no-cache-dir ruff &&
             ruff --version &&
-            ruff check .
-          "
+            ruff check "$PY_SRC"
+          '
         '''
       }
     }
@@ -35,11 +38,11 @@ pipeline {
       steps {
         sh '''
           set -eux
-          docker run --rm -v "$PWD":/repo -w /repo python:3.11-slim bash -lc "
+          docker run --rm -v "$PWD":/repo -w /repo python:3.11-slim bash -lc '
             pip install --no-cache-dir bandit &&
             bandit --version &&
-            bandit -r . -ll -iii
-          "
+            bandit -r "$PY_SRC" -ll -iii
+          '
         '''
       }
     }
@@ -50,7 +53,7 @@ pipeline {
           set -eux
           docker run --rm -v "$PWD":/repo -w /repo zricethezav/gitleaks:latest \
             detect --no-git --verbose --redact --exit-code 1 \
-            --config-path .gitleaks.toml || (echo "Secrets detected by gitleaks" && exit 1)
+            -c .gitleaks.toml
         '''
       }
     }
@@ -83,9 +86,9 @@ pipeline {
     }
 
     stage('Deploy to STAGE') {
-      when { branch 'dev' }  // multibranch
+      when { branch 'dev' } // только из ветки dev
       steps {
-        // Поставь сюда ID своих SSH-кредов (у тебя раньше ругалось на 'myagky' — проверь ID!)
+        // ВАЖНО: здесь должен быть корректный ID SSH-кредов! (в Jenkins > Credentials)
         sshagent (credentials: ['stage-server-ssh']) {
           sh """
             set -eux
@@ -97,7 +100,6 @@ cd "$STAGE_DIR"
 
 if [ ! -f docker-compose.yaml ]; then
   cat > docker-compose.yaml <<'EOC'
-version: '3.8'
 services:
   db:
     image: postgres:16
