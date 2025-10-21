@@ -9,7 +9,7 @@ pipeline {
     STAGE_USER = "myagky"
     STAGE_DIR  = "/home/myagky/city-council-stage"
 
-    // Если захочешь явно задать путь к питоновскому коду для статики — поменяй на "app"
+    // Если код не в корне, поставь здесь "app"
     PY_SRC     = "."
   }
 
@@ -25,11 +25,13 @@ pipeline {
       steps {
         sh '''
           set -eux
-          docker run --rm -v "$PWD":/repo -w /repo python:3.11-slim bash -lc '
-            pip install --no-cache-dir ruff &&
-            ruff --version &&
-            ruff check "$PY_SRC"
-          '
+          docker run --rm \
+            -e PY_SRC="$PY_SRC" \
+            -v "$PWD":/repo -w /repo python:3.11-slim bash -lc "
+              pip install --no-cache-dir ruff &&
+              ruff --version &&
+              ruff check \\"\\${PY_SRC:-.}\\"
+            "
         '''
       }
     }
@@ -38,11 +40,16 @@ pipeline {
       steps {
         sh '''
           set -eux
-          docker run --rm -v "$PWD":/repo -w /repo python:3.11-slim bash -lc '
-            pip install --no-cache-dir bandit &&
-            bandit --version &&
-            bandit -r "$PY_SRC" -ll -iii
-          '
+          docker run --rm \
+            -e PY_SRC="$PY_SRC" \
+            -v "$PWD":/repo -w /repo python:3.11-slim bash -lc "
+              pip install --no-cache-dir bandit &&
+              bandit --version &&
+              bandit -r \\"\\${PY_SRC:-.}\\\" -ll -iii || {
+                echo 'Bandit завершился с ошибкой. Если в каталоге нет .py файлов — это нормально, но тогда проверь PY_SRC';
+                exit 1;
+              }
+            "
         '''
       }
     }
@@ -86,9 +93,8 @@ pipeline {
     }
 
     stage('Deploy to STAGE') {
-      when { branch 'dev' } // только из ветки dev
+      when { branch 'dev' }  // деплой только из dev
       steps {
-        // ВАЖНО: здесь должен быть корректный ID SSH-кредов! (в Jenkins > Credentials)
         sshagent (credentials: ['stage-server-ssh']) {
           sh """
             set -eux
