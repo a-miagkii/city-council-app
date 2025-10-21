@@ -22,22 +22,12 @@ pipeline {
       steps {
         sh '''
           set -eux
+          # Используем официальный образ ruff, без pip
+          # Если .py нет — ruff просто пройдёт по каталогу и завершится 0
           docker run --rm \
-            -v "$PWD":/repo -w /repo \
-            python:3.11-slim bash -lc '
-              set -euo pipefail
-              pip install --no-cache-dir ruff >/dev/null
-              ruff --version
-
-              shopt -s globstar nullglob
-              files=(**/*.py *.py)
-              if [ ${#files[@]} -eq 0 ]; then
-                echo "Ruff: .py файлов не найдено — пропуск."
-                exit 0
-              fi
-
-              ruff check "${files[@]}"
-            '
+            -v "$PWD":/src \
+            ghcr.io/astral-sh/ruff:latest \
+            check /src
         '''
       }
     }
@@ -50,9 +40,15 @@ pipeline {
             -v "$PWD":/repo -w /repo \
             python:3.11-slim bash -lc '
               set -euo pipefail
-              pip install --no-cache-dir bandit >/dev/null
+
+              # Надёжнее ставим bandit с несколькими попытками (в случае временных сетевых сбоёв)
+              for i in 1 2 3; do
+                if pip install --no-cache-dir bandit >/dev/null; then break; fi
+                echo "pip install bandit failed, retry $i/3"; sleep 5
+              done
               bandit --version
 
+              # Если в репо вообще нет .py — сообщим и выйдем 0
               shopt -s globstar nullglob
               files=(**/*.py *.py)
               if [ ${#files[@]} -eq 0 ]; then
@@ -70,7 +66,6 @@ pipeline {
       steps {
         sh '''
           set -eux
-          # если есть локальный конфиг — используем его, иначе запускаем с дефолтами
           if [ -f .gitleaks.toml ]; then
             echo "Gitleaks: найден .gitleaks.toml — используем конфиг"
             docker run --rm -v "$PWD":/repo -w /repo \
@@ -99,7 +94,7 @@ pipeline {
     stage('Push to Docker Hub') {
       steps {
         withCredentials([usernamePassword(
-          credentialsId: 'dockerhub-creds',   // проверь ID кредов в Jenkins
+          credentialsId: 'dockerhub-creds',   // проверь, что ID кредов верный
           usernameVariable: 'DH_USER',
           passwordVariable: 'DH_PASS'
         )]) {
@@ -127,7 +122,6 @@ set -eux
 mkdir -p "$STAGE_DIR" "$STAGE_DIR/uploads"
 cd "$STAGE_DIR"
 
-# docker-compose.yaml — создадим, если нет
 if [ ! -f docker-compose.yaml ]; then
   cat > docker-compose.yaml <<'EOC'
 version: '3.8'
@@ -156,7 +150,6 @@ volumes:
 EOC
 fi
 
-# .env — создадим, если нет
 if [ ! -f .env ]; then
   cat > .env <<'EOV'
 SECRET_KEY=change-me
