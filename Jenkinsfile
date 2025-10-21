@@ -5,7 +5,6 @@ pipeline {
     IMAGE_NAME = "myagky/citycouncil"
     BUILD_TAG  = "${env.BUILD_NUMBER}"
 
-    // STAGE-сервер
     STAGE_HOST = "10.211.55.16"
     STAGE_USER = "myagky"
     STAGE_DIR  = "/home/myagky/city-council-stage"
@@ -61,7 +60,6 @@ pipeline {
                 exit 0
               fi
 
-              # -ll (High verbosity), -iii (Only high confidence)
               bandit -r . -ll -iii
             '
         '''
@@ -72,13 +70,18 @@ pipeline {
       steps {
         sh '''
           set -eux
-          FLAGS=""
-          [ -f .gitleaks.toml ] && FLAGS="-c .gitleaks.toml"
-
-          docker run --rm \
-            -v "$PWD":/repo -w /repo \
-            zricethezav/gitleaks:latest \
-              detect --no-git --verbose --redact --exit-code 1 $FLAGS
+          # если есть локальный конфиг — используем его, иначе запускаем с дефолтами
+          if [ -f .gitleaks.toml ]; then
+            echo "Gitleaks: найден .gitleaks.toml — используем конфиг"
+            docker run --rm -v "$PWD":/repo -w /repo \
+              zricethezav/gitleaks:latest \
+              detect --no-git --verbose --redact --exit-code 1 -c .gitleaks.toml
+          else
+            echo "Gitleaks: .gitleaks.toml не найден — запускаем с дефолтной конфигурацией"
+            docker run --rm -v "$PWD":/repo -w /repo \
+              zricethezav/gitleaks:latest \
+              detect --no-git --verbose --redact --exit-code 1
+          fi
         '''
       }
     }
@@ -96,7 +99,7 @@ pipeline {
     stage('Push to Docker Hub') {
       steps {
         withCredentials([usernamePassword(
-          credentialsId: 'dockerhub-creds',   // <= проверь ID кредов в Jenkins
+          credentialsId: 'dockerhub-creds',   // проверь ID кредов в Jenkins
           usernameVariable: 'DH_USER',
           passwordVariable: 'DH_PASS'
         )]) {
@@ -111,9 +114,9 @@ pipeline {
     }
 
     stage('Deploy to STAGE') {
-      when { branch 'dev' }  // деплоим только из ветки dev в multibranch
+      when { branch 'dev' }  // деплоим только из ветки dev
       steps {
-        // !!! Проверь credentialsId ниже: должен совпадать с ID SSH ключа в Jenkins
+        // проверь ID SSH-кредов; должен совпадать с записью в Jenkins Credentials
         sshagent (credentials: ['stage-server-ssh']) {
           sh """
             set -eux
