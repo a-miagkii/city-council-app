@@ -5,12 +5,10 @@ pipeline {
     IMAGE_NAME = "myagky/citycouncil"
     BUILD_TAG  = "${env.BUILD_NUMBER}"
 
+    // STAGE-сервер
     STAGE_HOST = "10.211.55.16"
     STAGE_USER = "myagky"
     STAGE_DIR  = "/home/myagky/city-council-stage"
-
-    // Если код не в корне, поставь здесь "app"
-    PY_SRC     = "."
   }
 
   options { timestamps() }
@@ -26,12 +24,21 @@ pipeline {
         sh '''
           set -eux
           docker run --rm \
-            -e PY_SRC="$PY_SRC" \
-            -v "$PWD":/repo -w /repo python:3.11-slim bash -lc "
-              pip install --no-cache-dir ruff &&
-              ruff --version &&
-              ruff check \\"\\${PY_SRC:-.}\\"
-            "
+            -v "$PWD":/repo -w /repo \
+            python:3.11-slim bash -lc '
+              set -euo pipefail
+              pip install --no-cache-dir ruff >/dev/null
+              ruff --version
+
+              shopt -s globstar nullglob
+              files=(**/*.py *.py)
+              if [ ${#files[@]} -eq 0 ]; then
+                echo "Ruff: .py файлов не найдено — пропуск."
+                exit 0
+              fi
+
+              ruff check "${files[@]}"
+            '
         '''
       }
     }
@@ -41,15 +48,22 @@ pipeline {
         sh '''
           set -eux
           docker run --rm \
-            -e PY_SRC="$PY_SRC" \
-            -v "$PWD":/repo -w /repo python:3.11-slim bash -lc "
-              pip install --no-cache-dir bandit &&
-              bandit --version &&
-              bandit -r \\"\\${PY_SRC:-.}\\\" -ll -iii || {
-                echo 'Bandit завершился с ошибкой. Если в каталоге нет .py файлов — это нормально, но тогда проверь PY_SRC';
-                exit 1;
-              }
-            "
+            -v "$PWD":/repo -w /repo \
+            python:3.11-slim bash -lc '
+              set -euo pipefail
+              pip install --no-cache-dir bandit >/dev/null
+              bandit --version
+
+              shopt -s globstar nullglob
+              files=(**/*.py *.py)
+              if [ ${#files[@]} -eq 0 ]; then
+                echo "Bandit: .py файлов не найдено — пропуск."
+                exit 0
+              fi
+
+              # -ll (High verbosity), -iii (Only high confidence)
+              bandit -r . -ll -iii
+            '
         '''
       }
     }
@@ -58,9 +72,13 @@ pipeline {
       steps {
         sh '''
           set -eux
-          docker run --rm -v "$PWD":/repo -w /repo zricethezav/gitleaks:latest \
-            detect --no-git --verbose --redact --exit-code 1 \
-            -c .gitleaks.toml
+          FLAGS=""
+          [ -f .gitleaks.toml ] && FLAGS="-c .gitleaks.toml"
+
+          docker run --rm \
+            -v "$PWD":/repo -w /repo \
+            zricethezav/gitleaks:latest \
+              detect --no-git --verbose --redact --exit-code 1 $FLAGS
         '''
       }
     }
@@ -78,7 +96,7 @@ pipeline {
     stage('Push to Docker Hub') {
       steps {
         withCredentials([usernamePassword(
-          credentialsId: 'dockerhub-creds',
+          credentialsId: 'dockerhub-creds',   // <= проверь ID кредов в Jenkins
           usernameVariable: 'DH_USER',
           passwordVariable: 'DH_PASS'
         )]) {
@@ -93,19 +111,23 @@ pipeline {
     }
 
     stage('Deploy to STAGE') {
-      when { branch 'dev' }  // деплой только из dev
+      when { branch 'dev' }  // деплоим только из ветки dev в multibranch
       steps {
+        // !!! Проверь credentialsId ниже: должен совпадать с ID SSH ключа в Jenkins
         sshagent (credentials: ['stage-server-ssh']) {
           sh """
             set -eux
             ssh -o StrictHostKeyChecking=no ${STAGE_USER}@${STAGE_HOST} \\
               "export STAGE_DIR='${STAGE_DIR}'; export IMAGE_NAME='${IMAGE_NAME}'; bash -s" <<'EOF'
 set -eux
+
 mkdir -p "$STAGE_DIR" "$STAGE_DIR/uploads"
 cd "$STAGE_DIR"
 
+# docker-compose.yaml — создадим, если нет
 if [ ! -f docker-compose.yaml ]; then
   cat > docker-compose.yaml <<'EOC'
+version: '3.8'
 services:
   db:
     image: postgres:16
@@ -131,6 +153,7 @@ volumes:
 EOC
 fi
 
+# .env — создадим, если нет
 if [ ! -f .env ]; then
   cat > .env <<'EOV'
 SECRET_KEY=change-me
