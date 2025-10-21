@@ -54,17 +54,20 @@ pipeline {
     stage('Static: Gitleaks (secrets)') {
       steps {
         sh '''
-          # ВАЖНО: проверку и запуск делаем ВНУТРИ контейнера, чтобы путь совпадал
-          docker run --rm -v "$PWD":/repo -w /repo zricethezav/gitleaks:latest sh -lc '
-            set -eu
-            if [ -f .gitleaks.toml ]; then
-              echo "Gitleaks: найден .gitleaks.toml — используем конфиг"
-              exec gitleaks detect --no-git --verbose --redact --exit-code 1 -c .gitleaks.toml
-            else
-              echo "Gitleaks: конфиг не найден — используем дефолтные правила"
-              exec gitleaks detect --no-git --verbose --redact --exit-code 1
-            fi
-          '
+          # Проверку наличия конфига делаем внутри контейнера.
+          docker run --rm \
+            --entrypoint /bin/sh \
+            -v "$PWD":/repo -w /repo \
+            zricethezav/gitleaks:latest -lc '
+              set -eu
+              if [ -f .gitleaks.toml ]; then
+                echo "Gitleaks: найден .gitleaks.toml — используем конфиг"
+                exec gitleaks detect --no-git --verbose --redact --exit-code 1 -c .gitleaks.toml
+              else
+                echo "Gitleaks: конфиг не найден — используем дефолтные правила"
+                exec gitleaks detect --no-git --verbose --redact --exit-code 1
+              fi
+            '
         '''
       }
     }
@@ -97,7 +100,7 @@ pipeline {
     }
 
     stage('Deploy to STAGE') {
-      when { branch 'dev' }   // только для dev в multibranch
+      when { branch 'dev' }  // multibranch: деплоим только для dev
       steps {
         sshagent (credentials: ['stage-server-ssh']) {
           sh '''
