@@ -54,7 +54,6 @@ pipeline {
     stage('Static: Gitleaks (secrets)') {
       steps {
         sh '''
-          # Проверку наличия конфига делаем внутри контейнера.
           docker run --rm \
             --entrypoint /bin/sh \
             -v "$PWD":/repo -w /repo \
@@ -75,10 +74,11 @@ pipeline {
 
     stage('Build Docker image') {
       steps {
-        sh '''
-          echo "Building Docker image..."
-          docker build -t '"${IMAGE_NAME}"':'"${BUILD_TAG}"' -t '"${IMAGE_NAME}"':latest .
-        '''
+        // Даем Groovy подставить переменные в команду
+        sh """
+          echo "Building Docker image: ${IMAGE_NAME}:${BUILD_TAG}"
+          docker build -t ${IMAGE_NAME}:${BUILD_TAG} -t ${IMAGE_NAME}:latest .
+        """
       }
     }
 
@@ -89,30 +89,31 @@ pipeline {
           usernameVariable: 'DH_USER',
           passwordVariable: 'DH_PASS'
         )]) {
-          sh '''
-            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-            docker push '"${IMAGE_NAME}"':'"${BUILD_TAG}"'
-            docker push '"${IMAGE_NAME}"':latest
+          sh """
+            echo "\$DH_PASS" | docker login -u "\$DH_USER" --password-stdin
+            docker push ${IMAGE_NAME}:${BUILD_TAG}
+            docker push ${IMAGE_NAME}:latest
             docker logout
-          '''
+          """
         }
       }
     }
 
     stage('Deploy to STAGE') {
-      when { branch 'dev' }  // multibranch: деплоим только для dev
+      when { branch 'dev' }  // деплоим только для dev
       steps {
         sshagent (credentials: ['stage-server-ssh']) {
-          sh '''
+          sh """
             set -eu
-            ssh -o StrictHostKeyChecking=no '"${STAGE_USER}"'@'"${STAGE_HOST}"' "bash -s" <<'EOF'
+            ssh -o StrictHostKeyChecking=no ${STAGE_USER}@${STAGE_HOST} "bash -s" <<'EOF'
 set -euo pipefail
-export STAGE_DIR='"${STAGE_DIR}"'
-export IMAGE_NAME='"${IMAGE_NAME}"'
+export STAGE_DIR='${STAGE_DIR}'
+export IMAGE_NAME='${IMAGE_NAME}'
 
 mkdir -p "$STAGE_DIR" "$STAGE_DIR/uploads"
 cd "$STAGE_DIR"
 
+# compose-файл создаем один раз; переменная IMAGE_NAME подставится самим docker compose
 if [ ! -f docker-compose.yaml ]; then
   cat > docker-compose.yaml <<'EOC'
 version: '3.8'
@@ -127,7 +128,7 @@ services:
       - pgdata_stage:/var/lib/postgresql/data
 
   web:
-    image: '"${IMAGE_NAME}"':latest
+    image: ${IMAGE_NAME}:latest
     env_file: .env
     depends_on:
       - db
@@ -153,7 +154,7 @@ docker compose pull web
 docker compose up -d --force-recreate web
 docker compose ps
 EOF
-          '''
+          """
         }
       }
     }
