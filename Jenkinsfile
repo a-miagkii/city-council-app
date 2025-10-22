@@ -100,7 +100,7 @@ pipeline {
             fi
 
             # 5) PYTHONPATH, чтобы импорты из подкаталогов находились
-            export PYTHONPATH="$PYTHONPATH:/repo:/repo/src:/repo/flask_city_council"
+            export PYTHONPATH="${PYTHONPATH:-}:/repo:/repo/src:/repo/flask_city_council"
 
             # 6) Запуск тестов с покрытием (по возможности)
             #    Если tests/ есть — используем его как цель, иначе пустим pytest по умолчанию.
