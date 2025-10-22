@@ -85,7 +85,7 @@ pipeline {
             if [ -f requirements.txt ]; then
               pip install --no-cache-dir -r requirements.txt
             else
-              pip install --no-cache-dir pytest pytest-flask coverage
+              pip install --no-cache-dir pytest pytest-flask pytest-cov coverage
             fi
 
             # 3) Динамически формируем список пакетов/каталогов для покрытия
