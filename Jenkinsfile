@@ -97,13 +97,6 @@ pipeline {
               if [ -d "$d" ]; then COVARGS+=(--cov="$d"); fi
             done
 
-            # 4) Если нет каталога tests — дадим предупреждение (pytest всё равно попытается найти тесты)
-            if [ ! -d tests ]; then
-              echo "⚠️  Директория tests/ не найдена в рабочем каталоге."
-              echo "   Текущая ветка: ${GIT_BRANCH:-неизвестно}"
-              echo "   Коммит: ${GIT_COMMIT:-неизвестно}"
-              echo "   Pytest запустится по умолчанию; убедитесь, что папка tests/ закоммичена в эту ветку."
-            fi
 
             # 5) PYTHONPATH, чтобы импорты из подкаталогов находились
             export PYTHONPATH="${PYTHONPATH:-}:/repo:/repo/src:/repo/flask_city_council"
@@ -119,12 +112,6 @@ pipeline {
             set -e
 
             case "$RC" in
-              0)
-                ;;
-              5)
-                echo "⚠️  Pytest вернул код 5 — тесты не были собраны."
-                echo "   Проверьте, что папка tests/ содержит файлы test_*.py и не исключена настройками pytest."
-
                 ;;
               *)
                 exit "$RC"
