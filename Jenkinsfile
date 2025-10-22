@@ -85,7 +85,7 @@ pipeline {
             if [ -f requirements.txt ]; then
               pip install --no-cache-dir -r requirements.txt
             else
-              pip install --no-cache-dir pytest pytest-flask coverage
+              pip install --no-cache-dir pytest pytest-flask pytest-cov coverage
             fi
 
             # 3) Динамически формируем список пакетов/каталогов для покрытия
@@ -100,7 +100,7 @@ pipeline {
             fi
 
             # 5) PYTHONPATH, чтобы импорты из подкаталогов находились
-            export PYTHONPATH="$PYTHONPATH:/repo:/repo/src:/repo/flask_city_council"
+            export PYTHONPATH="${PYTHONPATH:-}:/repo:/repo/src:/repo/flask_city_council"
 
             # 6) Запуск тестов с покрытием (по возможности)
             #    Если tests/ есть — используем его как цель, иначе пустим pytest по умолчанию.
