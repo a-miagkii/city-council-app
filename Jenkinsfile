@@ -75,10 +75,39 @@ pipeline {
         sh '''
           docker run --rm -v "$PWD":/repo -w /repo python:3.11-slim bash -lc '
             set -euo pipefail
+
+            # 1) Виртуалка для тестов
             python -m venv /tmp/venv
             . /tmp/venv/bin/activate
-            pip install --no-cache-dir -r requirements.txt
-            pytest --maxfail=1 --disable-warnings --cov=app --cov=blueprints --cov=models --cov-report=term-missing
+
+            # 2) Зависимости: если есть requirements.txt — ставим его,
+            #    иначе — минимальный набор для запуска тестов
+            if [ -f requirements.txt ]; then
+              pip install --no-cache-dir -r requirements.txt
+            else
+              pip install --no-cache-dir pytest pytest-flask coverage
+            fi
+
+            # 3) Динамически формируем список пакетов/каталогов для покрытия
+            COVARGS=()
+            for d in app blueprints models src flask_city_council; do
+              if [ -d "$d" ]; then COVARGS+=(--cov="$d"); fi
+            done
+
+            # 4) Если нет каталога tests — дадим предупреждение (pytest всё равно попытается найти тесты)
+            if [ ! -d tests ]; then
+              echo "⚠️  Директория tests/ не найдена — pytest запустится по умолчанию."
+            fi
+
+            # 5) PYTHONPATH, чтобы импорты из подкаталогов находились
+            export PYTHONPATH="$PYTHONPATH:/repo:/repo/src:/repo/flask_city_council"
+
+            # 6) Запуск тестов с покрытием (по возможности)
+            #    Если tests/ есть — используем его как цель, иначе пустим pytest по умолчанию.
+            TARGET="tests"
+            [ -d tests ] || TARGET="."
+
+            pytest --maxfail=1 --disable-warnings "${COVARGS[@]}" --cov-report=term-missing "$TARGET"
           '
         '''
       }
@@ -113,10 +142,10 @@ pipeline {
     }
 
     stage('Deploy to STAGE') {
-      when { branch 'dev' } // в multibranch деплоим только из dev
+      when { branch 'dev' } // деплоим только из dev
       steps {
         sshagent (credentials: ['stage-server-ssh']) {
-          // 1) Пересылаем собранный образ на STAGE и загружаем локально (без pull)
+          // 1) Передаём собранный образ на STAGE и загружаем локально (без pull из Registry)
           sh '''
             set -eu
             echo "Streaming image ${IMAGE_NAME}:${BUILD_TAG} to ${STAGE_USER}@${STAGE_HOST} ..."
@@ -124,7 +153,7 @@ pipeline {
               ssh -o StrictHostKeyChecking=no ${STAGE_USER}@${STAGE_HOST} 'gunzip | docker load'
           '''
 
-          // 2) Обновляем compose и поднимаем web без выкачивания из интернета
+          // 2) Обновляем compose и поднимаем web на STAGE с только что загруженным тегом
           sh """
             set -eu
             ssh -o StrictHostKeyChecking=no ${STAGE_USER}@${STAGE_HOST} "bash -s" <<'EOF'
@@ -136,7 +165,6 @@ export BUILD_TAG='${BUILD_TAG}'
 mkdir -p "$STAGE_DIR" "$STAGE_DIR/uploads"
 cd "$STAGE_DIR"
 
-# docker-compose без поля version, с фиксированным тегом образа (тот, что мы только что загрузили)
 cat > docker-compose.yaml <<EOC
 services:
   db:
@@ -162,7 +190,6 @@ volumes:
   pgdata_stage:
 EOC
 
-# .env создаём один раз
 if [ ! -f .env ]; then
   cat > .env <<'EOV'
 SECRET_KEY=change-me
@@ -171,7 +198,6 @@ FLASK_ENV=production
 EOV
 fi
 
-# Запуск без pull (образ уже локально есть)
 docker compose up -d --force-recreate web
 docker compose ps
 EOF
@@ -182,7 +208,7 @@ EOF
   }
 
   post {
-    success { echo "✅ Static OK → Build & Push OK → (dev) Deploy OK" }
+    success { echo "✅ Static OK → Tests OK → Build & Push OK → (dev) Deploy OK" }
     failure { echo "❌ Pipeline failed" }
   }
 }
