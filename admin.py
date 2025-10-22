@@ -15,6 +15,15 @@ class SecureModelView(ModelView):
         return redirect(url_for('auth.login', next=request.url))
 
 def init_admin(app):
+    # Сбрасываем ранее добавленные представления, чтобы повторная инициализация (например, в тестах)
+    # не приводила к конфликтам из-за уже зарегистрированных blueprint-ов.
+    if hasattr(admin, "_views"):
+        admin._views = []
+    if hasattr(admin, "_menu"):
+        admin._menu = []
+    if hasattr(admin, "_menu_categories"):
+        admin._menu_categories = admin._menu_categories.__class__()
+
     admin.init_app(app)
 
     admin.add_view(SecureModelView(
