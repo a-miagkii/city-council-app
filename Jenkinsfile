@@ -83,7 +83,7 @@ pipeline {
           docker run --rm \
             -e GIT_BRANCH="${GIT_BRANCH:-}" \
             -e GIT_COMMIT="${GIT_COMMIT:-}" \
-            -v "${WORKSPACE}":/repo -w /repo python:3.11-slim bash -lc "
+            -v "${WORKSPACE}":/repo -w /repo python:3.11-slim bash -lc '
               set -euo pipefail
 
               # 1) Виртуальное окружение
@@ -100,28 +100,28 @@ pipeline {
               # 3) Динамически формируем покрытие
               COVARGS=()
               for d in app blueprints models src flask_city_council; do
-                if [ -d \\"$d\\" ]; then COVARGS+=(--cov=\\"$d\\"); fi
+                if [ -d "$d" ]; then COVARGS+=(--cov="$d"); fi
               done
 
               # 4) PYTHONPATH
-              export PYTHONPATH=\\"${PYTHONPATH:-}:/repo:/repo/src:/repo/flask_city_council\\"
+              export PYTHONPATH="${PYTHONPATH:-}:/repo:/repo/src:/repo/flask_city_council"
 
               # 5) Цель для pytest
-              TARGET=\\"tests\\"
-              [ -d tests ] || TARGET=\\".\\"
+              TARGET="tests"
+              [ -d tests ] || TARGET="."
 
               # 6) Запуск pytest с обработкой кода возврата
               set +e
-              pytest --maxfail=1 --disable-warnings \\"${COVARGS[@]}\\" --cov-report=term-missing \\"$TARGET\\"
-              RC=$?
+              pytest --maxfail=1 --disable-warnings "${COVARGS[@]}" --cov-report=term-missing "$TARGET"
+              rc=$?
               set -e
 
-              case \\"$RC\\" in
-                0) echo \\"Pytests passed.\\" ;;
-                5) echo \\"No tests collected — treating as success.\\" ;;
-                *) exit \\"$RC\\" ;;
+              case "$rc" in
+                0) echo "Pytests passed." ;;
+                5) echo "No tests collected — treating as success." ;;
+                *) exit "$rc" ;;
               esac
-            "
+            '
         '''
       }
     }
