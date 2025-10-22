@@ -97,6 +97,7 @@ pipeline {
               if [ -d "$d" ]; then COVARGS+=(--cov="$d"); fi
             done
 
+
             # 5) PYTHONPATH, чтобы импорты из подкаталогов находились
             export PYTHONPATH="${PYTHONPATH:-}:/repo:/repo/src:/repo/flask_city_council"
 
@@ -111,7 +112,6 @@ pipeline {
             set -e
 
             case "$RC" in
-              0|5)
                 ;;
               *)
                 exit "$RC"
