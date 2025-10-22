@@ -5,8 +5,8 @@ pipeline {
     IMAGE_NAME = "myagky/citycouncil"
 
     // Параметры stage-сервера:
-    STAGE_HOST = "10.211.55.16"      
-    STAGE_USER = "myagky"            
+    STAGE_HOST = "10.211.55.16"
+    STAGE_USER = "myagky"
     STAGE_DIR  = "/home/myagky/city-council-stage"
 
     // Тег по номеру билда
@@ -20,11 +20,12 @@ pipeline {
       steps { checkout scm }
     }
 
+    // ---------- STATIC CHECKS ----------
     stage('Static: Ruff (code quality)') {
       steps {
         sh '''
-          set -euo pipefail
-          docker run --rm -v ${WORKSPACE}:/src ghcr.io/astral-sh/ruff:latest check /src || true
+          set -eu
+          docker run --rm -v "${WORKSPACE}":/src ghcr.io/astral-sh/ruff:latest check /src || true
         '''
       }
     }
@@ -32,8 +33,8 @@ pipeline {
     stage('Static: Bandit (security)') {
       steps {
         sh '''
-          set -euo pipefail
-          docker run --rm -v ${WORKSPACE}:/repo -w /repo python:3.11-slim bash -lc '
+          set -eu
+          docker run --rm -v "${WORKSPACE}":/repo -w /repo python:3.11-slim bash -lc '
             set -euo pipefail
             for i in 1 2 3; do
               if pip install --no-cache-dir bandit >/dev/null; then break; fi
@@ -57,31 +58,35 @@ pipeline {
     stage('Static: Gitleaks (secrets)') {
       steps {
         sh '''
-          set -euo pipefail
-          docker run --rm --entrypoint /bin/sh -v ${WORKSPACE}:/repo -w /repo zricethezav/gitleaks:latest -lc '
-            set -eu
-            if [ -f .gitleaks.toml ]; then
-              echo "Gitleaks: найден .gitleaks.toml — используем конфиг"
-              exec gitleaks detect --no-git --verbose --redact --exit-code 1 -c .gitleaks.toml
-            else
-              echo "Gitleaks: конфиг не найден — используем дефолтные правила"
-              exec gitleaks detect --no-git --verbose --redact --exit-code 1
-            fi
-          '
+          set -eu
+          docker run --rm --entrypoint /bin/sh \
+            -v "${WORKSPACE}":/repo -w /repo \
+            zricethezav/gitleaks:latest -lc '
+              set -eu
+              if [ -f .gitleaks.toml ]; then
+                echo "Gitleaks: найден .gitleaks.toml — используем конфиг"
+                exec gitleaks detect --no-git --verbose --redact --exit-code 1 -c .gitleaks.toml
+              else
+                echo "Gitleaks: конфиг не найден — используем дефолтные правила"
+                exec gitleaks detect --no-git --verbose --redact --exit-code 1
+              fi
+            '
         '''
       }
     }
+    // ---------- /STATIC CHECKS ----------
 
     stage('Tests: Pytest') {
       steps {
         sh '''
-          set -euo pipefail
-
-          # 1) Виртуалка для тестов
-          docker run --rm -e GIT_BRANCH=${GIT_BRANCH:-} -e GIT_COMMIT=${GIT_COMMIT:-} \
-            -v ${WORKSPACE}:/repo -w /repo python:3.11-slim bash -lc "
+          set -eu
+          docker run --rm \
+            -e GIT_BRANCH="${GIT_BRANCH:-}" \
+            -e GIT_COMMIT="${GIT_COMMIT:-}" \
+            -v "${WORKSPACE}":/repo -w /repo python:3.11-slim bash -lc "
               set -euo pipefail
 
+              # 1) Виртуальное окружение
               python -m venv /tmp/venv
               . /tmp/venv/bin/activate
 
@@ -124,8 +129,8 @@ pipeline {
     stage('Build Docker image') {
       steps {
         sh '''
-          set -euo pipefail
-          echo "Building Docker image..."
+          set -eu
+          echo "Building Docker image: ${IMAGE_NAME}:${BUILD_TAG}"
           docker build -t ${IMAGE_NAME}:${BUILD_TAG} -t ${IMAGE_NAME}:latest .
         '''
       }
@@ -139,7 +144,7 @@ pipeline {
           passwordVariable: 'DH_PASS'
         )]) {
           sh '''
-            set -euo pipefail
+            set -eu
             echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
             docker push ${IMAGE_NAME}:${BUILD_TAG}
             docker push ${IMAGE_NAME}:latest
@@ -154,18 +159,15 @@ pipeline {
       steps {
         sshagent (credentials: ['stage-server-ssh']) {
           sh """
-            set -euo pipefail
-            ssh -o StrictHostKeyChecking=no ${STAGE_USER}@${STAGE_HOST} bash -s <<EOF
+            set -eu
+            ssh -o StrictHostKeyChecking=no ${STAGE_USER}@${STAGE_HOST} bash -s <<'EOF'
 set -euo pipefail
 
-# папка проекта на stage
-mkdir -p ${STAGE_DIR}
-cd ${STAGE_DIR}
+mkdir -p '${STAGE_DIR}' '${STAGE_DIR}/uploads'
+cd '${STAGE_DIR}'
 
-# если docker-compose.yaml отсутствует — создаём один раз
-if [ ! -f docker-compose.yaml ]; then
-  cat > docker-compose.yaml <<'YAML'
-version: '3.8'
+# docker-compose с ИМЕННО ЭТИМ тегом билда (репродьюсабельно)
+cat > docker-compose.yaml <<YAML
 services:
   db:
     image: postgres:16
@@ -175,8 +177,9 @@ services:
       POSTGRES_DB: citycouncil
     volumes:
       - pgdata_stage:/var/lib/postgresql/data
+
   web:
-    image: myagky/citycouncil:latest
+    image: ${IMAGE_NAME}:${BUILD_TAG}
     env_file: .env
     depends_on:
       - db
@@ -184,29 +187,23 @@ services:
       - "8081:8000"
     volumes:
       - ./uploads:/app/static/uploads
+
 volumes:
   pgdata_stage:
 YAML
-fi
 
-# .env должен быть заранее, но на первый раз можем сгенерировать шаблон
+# .env создаём один раз
 if [ ! -f .env ]; then
-  cat > .env <<'ENV'
+  cat > .env <<'EOV'
 SECRET_KEY=change-me
 SQLALCHEMY_DATABASE_URI=postgresql+psycopg2://cityuser:citypass@db:5432/citycouncil
 FLASK_ENV=production
-ENV
+EOV
 fi
 
-mkdir -p uploads
-
-# тянем новый образ и поднимаем
+# тянем конкретный тег и поднимаем web
 docker compose pull web || true
-docker compose up -d
-
-# при самом первом запуске можно разово наполнить БД демо-данными:
-# docker compose exec -T web python seeds.py || true
-
+docker compose up -d --force-recreate web
 docker compose ps
 EOF
           """
@@ -217,7 +214,7 @@ EOF
 
   post {
     success {
-      echo "✅ Pushed ${IMAGE_NAME}:${BUILD_TAG} and deployed to STAGE (if dev)."
+      echo "✅ Static OK → Tests OK → Build & Push OK → (dev) Deploy OK"
     }
     failure {
       echo "❌ Pipeline failed"
