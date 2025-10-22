@@ -70,6 +70,20 @@ pipeline {
     }
     // ---------- /STATIC CHECKS ----------
 
+    stage('Tests: Pytest') {
+      steps {
+        sh '''
+          docker run --rm -v "$PWD":/repo -w /repo python:3.11-slim bash -lc '
+            set -euo pipefail
+            python -m venv /tmp/venv
+            . /tmp/venv/bin/activate
+            pip install --no-cache-dir -r requirements.txt
+            pytest --maxfail=1 --disable-warnings --cov=app --cov=blueprints --cov=models --cov-report=term-missing
+          '
+        '''
+      }
+    }
+
     stage('Build Docker image') {
       steps {
         sh '''
