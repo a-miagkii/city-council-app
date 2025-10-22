@@ -73,7 +73,10 @@ pipeline {
     stage('Tests: Pytest') {
       steps {
         sh '''
-          docker run --rm -v "$PWD":/repo -w /repo python:3.11-slim bash -lc '
+          docker run --rm \
+            -e GIT_BRANCH="${GIT_BRANCH:-}" \
+            -e GIT_COMMIT="${GIT_COMMIT:-}" \
+            -v "$PWD":/repo -w /repo python:3.11-slim bash -lc '
             set -euo pipefail
 
             # 1) Виртуалка для тестов
@@ -96,7 +99,11 @@ pipeline {
 
             # 4) Если нет каталога tests — дадим предупреждение (pytest всё равно попытается найти тесты)
             if [ ! -d tests ]; then
-              echo "⚠️  Директория tests/ не найдена — pytest запустится по умолчанию."
+              echo "❌ Директория tests/ отсутствует в рабочем каталоге."
+              echo "   Текущая ветка: ${GIT_BRANCH:-неизвестно}" 
+              echo "   Коммит: ${GIT_COMMIT:-неизвестно}"
+              echo "   Убедитесь, что в этой ветке репозитория закоммичена папка tests/."
+              exit 1
             fi
 
             # 5) PYTHONPATH, чтобы импорты из подкаталогов находились
@@ -107,7 +114,23 @@ pipeline {
             TARGET="tests"
             [ -d tests ] || TARGET="."
 
+            set +e
             pytest --maxfail=1 --disable-warnings "${COVARGS[@]}" --cov-report=term-missing "$TARGET"
+            RC=$?
+            set -e
+
+            case "$RC" in
+              0)
+                ;;
+              5)
+                echo "❌ Pytest вернул код 5 — тесты не были собраны."
+                echo "   Проверьте, что папка tests/ содержит файлы test_*.py и не исключена настройками pytest."
+                exit 5
+                ;;
+              *)
+                exit "$RC"
+                ;;
+            esac
           '
         '''
       }
